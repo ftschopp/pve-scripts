@@ -89,11 +89,7 @@ vm_wait_agent() {
     local vmid="$1"
     local timeout="${2:-300}"
 
-    local check_agent() {
-        qm agent "$vmid" ping &>/dev/null
-    }
-
-    wait_for "VM $vmid guest agent" "$timeout" check_agent
+    wait_for "VM $vmid guest agent" "$timeout" qm agent "$vmid" ping
 }
 
 # Get container status
