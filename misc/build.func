@@ -1,0 +1,209 @@
+#!/bin/bash
+# PVE Scripts - Shared Build Functions
+# https://github.com/ftschopp/pve-scripts
+#
+# This file contains shared functions used by all installation scripts.
+# Source it at the beginning of each install.sh
+
+# =============================================================================
+# Colors and Formatting
+# =============================================================================
+readonly RD='\033[0;31m'
+readonly GN='\033[0;32m'
+readonly YW='\033[0;33m'
+readonly BL='\033[0;34m'
+readonly CY='\033[0;36m'
+readonly NC='\033[0m'
+readonly BOLD='\033[1m'
+
+# =============================================================================
+# Logging Functions
+# =============================================================================
+msg_info() { echo -e "${GN}[INFO]${NC} $*"; }
+msg_warn() { echo -e "${YW}[WARN]${NC} $*"; }
+msg_error() { echo -e "${RD}[ERROR]${NC} $*" >&2; }
+msg_ok() { echo -e "${GN}[OK]${NC} $*"; }
+
+# =============================================================================
+# System Checks
+# =============================================================================
+
+# Check if running as root
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        msg_error "This script must be run as root"
+        exit 1
+    fi
+}
+
+# Check if running on Proxmox VE
+check_proxmox() {
+    if ! command -v pveversion &> /dev/null; then
+        msg_error "This script must be run on a Proxmox VE host"
+        exit 1
+    fi
+    msg_info "Detected: $(pveversion --verbose | head -1)"
+}
+
+# Check if running on Debian/Ubuntu
+check_debian() {
+    if [[ ! -f /etc/debian_version ]]; then
+        msg_error "This script requires a Debian-based system"
+        exit 1
+    fi
+}
+
+# =============================================================================
+# Download Functions
+# =============================================================================
+REPO_RAW_URL="${REPO_RAW_URL:-https://raw.githubusercontent.com/ftschopp/pve-scripts/main}"
+
+# Download a file from the repository
+# Usage: download_file "path/in/repo" "/local/destination"
+download_file() {
+    local remote_path="$1"
+    local local_path="$2"
+    local url="${REPO_RAW_URL}/${remote_path}"
+
+    if command -v wget &> /dev/null; then
+        wget -qO "$local_path" "$url" || { msg_error "Failed to download: $remote_path"; return 1; }
+    elif command -v curl &> /dev/null; then
+        curl -fsSL -o "$local_path" "$url" || { msg_error "Failed to download: $remote_path"; return 1; }
+    else
+        msg_error "Neither wget nor curl found"
+        exit 1
+    fi
+}
+
+# Source a remote script
+# Usage: source_url "path/in/repo"
+source_url() {
+    local remote_path="$1"
+    local url="${REPO_RAW_URL}/${remote_path}"
+    local tmp_file
+
+    tmp_file=$(mktemp)
+    trap "rm -f $tmp_file" RETURN
+
+    if command -v wget &> /dev/null; then
+        wget -qO "$tmp_file" "$url" || { msg_error "Failed to source: $remote_path"; return 1; }
+    else
+        curl -fsSL -o "$tmp_file" "$url" || { msg_error "Failed to source: $remote_path"; return 1; }
+    fi
+
+    source "$tmp_file"
+}
+
+# =============================================================================
+# Dependency Management
+# =============================================================================
+
+# Install yq if not present
+install_yq() {
+    if command -v yq &> /dev/null; then
+        msg_info "yq is already installed"
+        return 0
+    fi
+
+    msg_info "Installing yq..."
+    local arch
+    arch=$(uname -m)
+    case $arch in
+        x86_64) arch="amd64" ;;
+        aarch64) arch="arm64" ;;
+        *) msg_error "Unsupported architecture: $arch"; return 1 ;;
+    esac
+
+    local yq_url="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}"
+    if wget -qO /usr/local/bin/yq "$yq_url" && chmod +x /usr/local/bin/yq; then
+        msg_ok "yq installed"
+    else
+        msg_error "Failed to install yq"
+        return 1
+    fi
+}
+
+# Install a package if not present
+# Usage: install_package "package-name"
+install_package() {
+    local pkg="$1"
+    if dpkg -l "$pkg" &>/dev/null; then
+        return 0
+    fi
+    msg_info "Installing $pkg..."
+    apt-get update -qq
+    apt-get install -y -qq "$pkg"
+}
+
+# =============================================================================
+# Systemd Helpers
+# =============================================================================
+
+# Create and enable a systemd service
+# Usage: create_systemd_service "service-name" "service-content"
+create_systemd_service() {
+    local name="$1"
+    local content="$2"
+    local service_file="/etc/systemd/system/${name}.service"
+
+    echo "$content" > "$service_file"
+    systemctl daemon-reload
+    msg_ok "Created systemd service: $name"
+}
+
+# Enable a service
+enable_service() {
+    local name="$1"
+    systemctl enable "$name" &>/dev/null
+    msg_ok "Enabled service: $name"
+}
+
+# Disable and remove a service
+remove_service() {
+    local name="$1"
+    if systemctl is-active --quiet "$name"; then
+        systemctl stop "$name"
+    fi
+    if systemctl is-enabled --quiet "$name" 2>/dev/null; then
+        systemctl disable "$name"
+    fi
+    rm -f "/etc/systemd/system/${name}.service"
+    systemctl daemon-reload
+}
+
+# =============================================================================
+# UI Helpers
+# =============================================================================
+
+# Print a header box
+# Usage: print_header "Title" "Subtitle"
+print_header() {
+    local title="$1"
+    local subtitle="${2:-}"
+    local width=60
+
+    echo -e "${BL}${BOLD}"
+    printf '╔'; printf '═%.0s' $(seq 1 $((width-2))); printf '╗\n'
+    printf '║ %-*s ║\n' $((width-4)) "$title"
+    if [[ -n "$subtitle" ]]; then
+        printf '║ %-*s ║\n' $((width-4)) "$subtitle"
+    fi
+    printf '╚'; printf '═%.0s' $(seq 1 $((width-2))); printf '╝\n'
+    echo -e "${NC}"
+}
+
+# Print success message with next steps
+# Usage: print_success "Config file path" "Command name"
+print_success() {
+    local config_path="$1"
+    local cmd_name="$2"
+
+    echo ""
+    echo -e "${GN}${BOLD}Installation Complete!${NC}"
+    echo ""
+    echo -e "${BOLD}Next Steps:${NC}"
+    echo "1. Edit configuration: ${YW}nano ${config_path}${NC}"
+    echo "2. Test: ${YW}${cmd_name} status${NC}"
+    echo "3. Enable on boot: ${YW}systemctl enable ${cmd_name}${NC}"
+    echo ""
+}

@@ -1,0 +1,109 @@
+# PVE Orchestrator Configuration
+# Copy this file to /etc/pve-orchestrator/config.yaml and customize
+
+# =============================================================================
+# TrueNAS VM Configuration
+# =============================================================================
+# This VM will be started first and the orchestrator will wait for it to be
+# ready before proceeding with mounts and containers.
+
+truenas:
+  # Proxmox VM ID
+  vmid: 100
+
+  # Maximum time to wait for the VM to boot and become accessible (seconds)
+  wait_timeout: 300
+
+  # Health check to verify TrueNAS is ready
+  health_check:
+    # Type: tcp, ping, or http
+    type: tcp
+    # Host or IP address
+    host: 192.168.1.10
+    # Port (required for tcp, optional for http)
+    port: 22
+
+# =============================================================================
+# Mount Points
+# =============================================================================
+# These mounts will be created after TrueNAS is ready.
+# Supported types: nfs, cifs
+
+mounts:
+  - type: nfs
+    source: "192.168.1.10:/mnt/pool/data"
+    target: "/mnt/truenas/data"
+    options: "rw,soft,intr,timeo=300"
+
+  - type: nfs
+    source: "192.168.1.10:/mnt/pool/media"
+    target: "/mnt/truenas/media"
+    options: "rw,soft,intr"
+
+  # Example CIFS mount (uncomment to use)
+  # - type: cifs
+  #   source: "//192.168.1.10/share"
+  #   target: "/mnt/truenas/cifs-share"
+  #   options: "rw,vers=3.0"
+  #   credentials: "/etc/pve-orchestrator/smb-credentials"  # Optional
+
+# =============================================================================
+# LXC Containers
+# =============================================================================
+# Containers are started in the order listed here.
+# You can add dependencies on mounts to ensure they're available first.
+
+containers:
+  # First tier - core services
+  - ctid: 101
+    name: "nginx-proxy"
+    # Wait time in seconds after starting this container before starting the next
+    wait: 10
+
+  # Second tier - depends on media mount
+  - ctid: 102
+    name: "jellyfin"
+    # Only start if this mount point is available
+    depends_on_mount: "/mnt/truenas/media"
+    wait: 5
+
+  # Third tier - depends on data mount
+  - ctid: 103
+    name: "nextcloud"
+    depends_on_mount: "/mnt/truenas/data"
+    wait: 5
+
+  # Add more containers as needed...
+  # - ctid: 104
+  #   name: "homeassistant"
+  #   wait: 5
+
+# =============================================================================
+# Additional VMs (Optional)
+# =============================================================================
+# Start additional VMs after TrueNAS and before containers.
+# Uncomment and customize as needed.
+
+# additional_vms:
+#   - vmid: 200
+#     name: "docker-host"
+#     wait_timeout: 120
+#     health_check:
+#       type: tcp
+#       host: 192.168.1.20
+#       port: 22
+
+# =============================================================================
+# Shutdown Configuration
+# =============================================================================
+# Settings for graceful shutdown (when running 'pve-orchestrator.sh stop')
+
+shutdown:
+  # Order: reverse (stop containers first, then VMs) or forward (same as start)
+  order: reverse
+  # Timeout for each container shutdown (seconds)
+  container_timeout: 30
+  # Timeout for TrueNAS VM shutdown (seconds)
+  vm_timeout: 120
+  # Unmount shares before stopping TrueNAS
+  unmount_shares: true
