@@ -7,6 +7,7 @@ A collection of remotely installable scripts for Proxmox VE, inspired by [Proxmo
 | Script | Description | Installation |
 |--------|-------------|--------------|
 | [orchestrator](scripts/orchestrator/) | Orchestrate VM, mount, and container startup order | [See below](#pve-orchestrator) |
+| [disk-health](scripts/disk-health/) | Monitor HDD/SSD/NVMe health with SMART analysis | [See below](#disk-health-monitor) |
 
 ## Quick Installation
 
@@ -24,6 +25,27 @@ Or with curl:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/ftschopp/pve-scripts/main/scripts/orchestrator/install.sh)"
 ```
 
+### Disk Health Monitor
+
+Monitor the health of your HDDs, SSDs, and NVMe drives using SMART data with intuitive, colorful output.
+
+```bash
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/ftschopp/pve-scripts/main/scripts/disk-health/install.sh)"
+```
+
+Or with curl:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ftschopp/pve-scripts/main/scripts/disk-health/install.sh)"
+```
+
+**Commands:**
+- `disk-health status` - Full status cards for all disks
+- `disk-health summary` - Quick table summary
+- `disk-health details -d /dev/sda` - Detailed info for one disk
+- `disk-health check` - Check for critical issues
+- `disk-health json` - JSON output for automation
+
 ## Repository Structure
 
 ```
@@ -31,14 +53,21 @@ pve-scripts/
 ├── misc/
 │   └── build.func              # Shared functions for all installers
 ├── scripts/
-│   └── orchestrator/           # Orchestration script
+│   ├── orchestrator/           # Orchestration script
+│   │   ├── install.sh          # Remote installer
+│   │   ├── service.sh          # Main service script
+│   │   ├── lib/
+│   │   │   ├── common.sh       # Common utility functions
+│   │   │   └── pve.sh          # Proxmox VE specific functions
+│   │   ├── templates/
+│   │   │   └── config.yaml.example
+│   │   └── README.md           # Script-specific documentation
+│   └── disk-health/            # Disk health monitoring
 │       ├── install.sh          # Remote installer
-│       ├── service.sh          # Main service script
+│       ├── service.sh          # Main script
 │       ├── lib/
-│       │   ├── common.sh       # Common utility functions
-│       │   └── pve.sh          # Proxmox VE specific functions
-│       ├── templates/
-│       │   └── config.yaml.example
+│       │   ├── common.sh       # Logging and display functions
+│       │   └── smart.sh        # SMART data retrieval functions
 │       └── README.md           # Script-specific documentation
 └── README.md
 ```
